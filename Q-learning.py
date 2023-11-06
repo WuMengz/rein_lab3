@@ -3,8 +3,24 @@
 import numpy as np
 import gym
 
-env = gym.make("FrozenLake-v0")  # 创建环境
+env = gym.make("FrozenLake-v1")  # 创建环境
 env.reset()
+
+def plot_moving_average(data, type = "", k = 100):
+    # print(data)
+    presum = 0
+    datalen = len(data)
+    for i in range(datalen):
+        presum += data[i]
+        data[i] = presum
+    for i in range(datalen - 1, k - 1, -1):
+        data[i] = data[i] - data[i - k]
+    for i in range(datalen):
+        data[i] /= k if i >= k else i + 1
+    plt.plot(data)
+    plt.xlabel("episodes")
+    plt.ylabel("moving average of " + type)
+    plt.show()
 
 def q_learning(env, num_episodes=1000, alpha=0.05, gamma=0.99, eps0=1, decay=0.001):
     # 初始化Q表为0
@@ -37,6 +53,68 @@ def q_learning(env, num_episodes=1000, alpha=0.05, gamma=0.99, eps0=1, decay=0.0
         if i_episode % 10000 == 0:
             print(Q)
             print(epsilon)
+    # 返回最终的Q表和策略
+    policy = np.argmax(Q, axis=1)
+    return Q, policy
+
+
+def sarsa_nstep(env, nstep, num_episodes=1000, alpha=0.1, gamma=0.99, eps0=1, decay=0.001):
+    # 初始化Q表为0
+    Q = np.zeros((env.observation_space.n, env.action_space.n))
+    td_errors = []
+    # 针对每个回合进行更新
+    for i_episode in range(num_episodes):
+        # 初始化状态
+        state = env.reset()
+        # 使用epsilon-greedy策略选择动作
+        epsilon = eps0 / (1 + decay * i_episode)
+        if i_episode % 1000 == 0:
+            print(f"iteration: {i_episode}, epsilon: {epsilon}")
+        action = epsilon_greedy(Q, state, env.action_space.n, epsilon)
+        states = [state]
+        actions = [action]
+        rewards = []
+        # 针对每个时间步进行更新
+        while True:
+            # 执行选定的动作
+            next_state,reward,done,_= env.step(action)
+            # 使用epsilon-greedy策略选择下一个动作
+            next_action = epsilon_greedy(Q, next_state, env.action_space.n, epsilon)
+            # 计算TD误差
+            # td_target = reward + gamma * Q[next_state, next_action] * (not done)
+            # td_error = td_target-Q[state, action]
+            # 更新Q表
+            # Q[state, action] += alpha * td_error
+            # 更新状态和动作
+            state = next_state
+            action = next_action
+            states.append(state)
+            actions.append(action)
+            rewards.append(reward)
+            if done:
+                break
+        
+        sum_tderror = 0
+        cnt = 0
+        for i in range(len(states) - 1):
+            state = states[i]
+            action = actions[i]
+
+            last_idx = min(len(states) - 1, i + nstep)
+            td_target = Q[states[last_idx], actions[last_idx]]
+            for j in reversed(range(i, last_idx)):
+                td_target = td_target * gamma + rewards[j]
+            td_error = td_target - Q[state, action]
+            
+            sum_tderror += abs(td_error)
+            cnt += 1
+            
+            Q[state, action] += alpha * td_error
+
+        td_errors.append(sum_tderror / cnt)
+    
+    plot_moving_average(td_errors)
+
     # 返回最终的Q表和策略
     policy = np.argmax(Q, axis=1)
     return Q, policy
